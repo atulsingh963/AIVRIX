@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+  USER
+}
+
+enum ProjectStatus {
+  PLANNING
+  DEVELOPMENT
+  TESTING
+  DEPLOYED
+  COMPLETED
+  ON_HOLD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ==========================================
+// User & Client Management
+// ==========================================
+
+model User {
+  id            String    @id @default(uuid())
+  clerkId       String    @unique // For Clerk Auth integration
+  email         String    @unique
+  firstName     String?
+  lastName      String?
+  role          Role      @default(USER)
+  avatarUrl     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  clientProfile Client?
+  projects      Project[] // Projects managed/owned by this user
+  messages      Message[]
+}
+
+model Client {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName   String
+  industry      String?
+  website       String?
+  billingAddress String?
+  
+  projects      Project[]
+  invoices      Invoice[]
+  bookings      Booking[]
+}
+
+// ==========================================
+// Project Management
+// ==========================================
+
+model Project {
+  id          String        @id @default(uuid())
+  title       String
+  description String?
+  status      ProjectStatus @default(PLANNING)
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  managerId   String?       // ID of the internal Admin managing this
+  manager     User?         @relation(fields: [managerId], references: [id])
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float?
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+// ==========================================
+// Communication & CRM
+// ==========================================
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  isRead    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+}
+
+model Booking {
+  id          String   @id @default(uuid())
+  clientId    String?
+  client      Client?  @relation(fields: [clientId], references: [id])
+  guestName   String?
+  guestEmail  String?
+  meetingDate DateTime
+  topic       String
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// Billing & Invoices
+// ==========================================
+
+model Invoice {
+  id          String        @id @default(uuid())
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  amount      Float
+  currency    String        @default("USD")
+  status      PaymentStatus @default(PENDING)
+  dueDate     DateTime
+  stripeId    String?       @unique
+  pdfUrl      String?
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+// ==========================================
+// CMS: Blog, Careers, Testimonials
+// ==========================================
+
+model BlogPost {
+  id          String   @id @default(uuid())
+  title       String
+  slug        String   @unique
+  content     String   // Markdown or Rich Text
+  excerpt     String?
+  coverImage  String?
+  published   Boolean  @default(false)
+  authorId    String
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Job {
+  id          String   @id @default(uuid())
+  title       String
+  department  String
+  location    String
+  type        String   // Full-time, Contract, etc.
+  description String
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+}
+
+model Testimonial {
+  id          String   @id @default(uuid())
+  clientName  String
+  company     String
+  content     String
+  rating      Int      @default(5)
+  avatarUrl   String?
+  
+  createdAt   DateTime @default(now())
+}
