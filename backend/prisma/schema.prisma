@@ -9,6 +9,8 @@ datasource db {
 
 enum Role {
   ADMIN
+  MANAGER
+  EMPLOYEE
   CLIENT
   USER
 }
@@ -29,6 +31,42 @@ enum PaymentStatus {
   CANCELLED
 }
 
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DealStage {
+  LEAD
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
 // ==========================================
 // User & Client Management
 // ==========================================
@@ -45,8 +83,12 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   clientProfile Client?
-  projects      Project[] // Projects managed/owned by this user
-  messages      Message[]
+  employeeProfile Employee?
+  
+  projectsManaged Project[] @relation("ProjectManager")
+  tasksAssigned   Task[]    @relation("TaskAssignee")
+  messages        Message[]
+  ticketsAssigned Ticket[]  @relation("TicketAssignee")
 }
 
 model Client {
@@ -61,10 +103,93 @@ model Client {
   projects      Project[]
   invoices      Invoice[]
   bookings      Booking[]
+  tickets       Ticket[]
+  contracts     Contract[]
+  deals         Deal[]
 }
 
 // ==========================================
-// Project Management
+// HRMS (Employees, Departments, Leaves, Attendance)
+// ==========================================
+
+model Department {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  employees   Employee[]
+  jobs        Job[]      @relation("DepartmentJobs")
+}
+
+model Employee {
+  id            String      @id @default(uuid())
+  userId        String      @unique
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  position      String
+  salary        Float?
+  joiningDate   DateTime    @default(now())
+  
+  attendances   Attendance[]
+  leaves        Leave[]
+}
+
+model Attendance {
+  id          String   @id @default(uuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime @default(now())
+  checkIn     DateTime?
+  checkOut    DateTime?
+  status      String   @default("PRESENT") // PRESENT, ABSENT, HALF_DAY
+}
+
+model Leave {
+  id          String      @id @default(uuid())
+  employeeId  String
+  employee    Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String      // SICK, CASUAL, ANNUAL
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+  status      LeaveStatus @default(PENDING)
+  
+  createdAt   DateTime    @default(now())
+}
+
+// ==========================================
+// CRM & Sales (Leads, Deals)
+// ==========================================
+
+model Lead {
+  id          String   @id @default(uuid())
+  firstName   String
+  lastName    String
+  email       String
+  phone       String?
+  company     String?
+  source      String?  // WEBSITE, REFERRAL, SOCIAL
+  score       Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Deal {
+  id          String    @id @default(uuid())
+  title       String
+  value       Float
+  stage       DealStage @default(LEAD)
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  expectedCloseDate DateTime?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ==========================================
+// Project Management (Projects, Milestones, Tasks)
 // ==========================================
 
 model Project {
@@ -74,18 +199,82 @@ model Project {
   status      ProjectStatus @default(PLANNING)
   clientId    String
   client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  managerId   String?       // ID of the internal Admin managing this
-  manager     User?         @relation(fields: [managerId], references: [id])
+  managerId   String?       
+  manager     User?         @relation("ProjectManager", fields: [managerId], references: [id])
   startDate   DateTime?
   endDate     DateTime?
   budget      Float?
+  
+  milestones  Milestone[]
+  tasks       Task[]
   
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 }
 
+model Milestone {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  dueDate     DateTime?
+  isCompleted Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  assigneeId  String?
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  dueDate     DateTime?
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
 // ==========================================
-// Communication & CRM
+// Support System (Tickets)
+// ==========================================
+
+model Ticket {
+  id          String         @id @default(uuid())
+  subject     String
+  description String
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+  clientId    String
+  client      Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assigneeId  String?
+  assignee    User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+// ==========================================
+// Document Management (Contracts, etc)
+// ==========================================
+
+model Contract {
+  id          String   @id @default(uuid())
+  title       String
+  fileUrl     String
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  signed      Boolean  @default(false)
+  signedAt    DateTime?
+  
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// Communication (Messages, Bookings)
 // ==========================================
 
 model Message {
@@ -138,7 +327,7 @@ model BlogPost {
   id          String   @id @default(uuid())
   title       String
   slug        String   @unique
-  content     String   // Markdown or Rich Text
+  content     String   
   excerpt     String?
   coverImage  String?
   published   Boolean  @default(false)
@@ -149,15 +338,16 @@ model BlogPost {
 }
 
 model Job {
-  id          String   @id @default(uuid())
-  title       String
-  department  String
-  location    String
-  type        String   // Full-time, Contract, etc.
-  description String
-  isActive    Boolean  @default(true)
+  id           String      @id @default(uuid())
+  title        String
+  departmentId String?
+  department   Department? @relation("DepartmentJobs", fields: [departmentId], references: [id])
+  location     String
+  type         String   
+  description  String
+  isActive     Boolean     @default(true)
   
-  createdAt   DateTime @default(now())
+  createdAt    DateTime    @default(now())
 }
 
 model Testimonial {
